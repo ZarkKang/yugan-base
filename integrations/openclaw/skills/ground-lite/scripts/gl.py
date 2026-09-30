@@ -16,8 +16,9 @@ KEY_FILE = Path(os.environ.get("GL_SENSITIVE_KEY_FILE", Path.home() / ".openclaw
 
 SENSITIVE = {
     "start", "start-task", "takeoff", "take-off", "arm", "unlock", "launch",
+    "delete-task", "delete-task-task", "delete-rows", "delete-row",
     "clear-table", "clear-bindings", "drop",
-    "起飞", "解锁",
+    "起飞", "解锁", "删除",
 }
 
 
@@ -59,9 +60,10 @@ def check_sensitive(cmd: str, key: str) -> bool:
         return False
     if key == expected:
         return True
-    print("DENIED: 敏感指令需要正确密钥。用法示例:")
-    print("  gl.py start TASK-202 --key <密钥>")
-    print("  （密钥由操作员在对话中提供，校验失败不会执行）")
+    print("DENIED: 敏感指令需要正确密钥。")
+    print("  适用: start/takeoff/arm/unlock 与 delete-task/delete-rows/clear-table/clear-bindings")
+    print(f"  用法: gl.py {cmd} <参数> --key <操作员在对话中提供的密钥>")
+    print("  校验失败不会执行。")
     return False
 
 
@@ -389,7 +391,7 @@ def usage():
 任务: publish-task TASK-xxx [name] [drone_id] shelf1,shelf2
 盘点: bind|unbind|clear-bindings|qr-control
 库表: db tables|rows|export
-删除: delete-task TASK-xxx | delete-rows TABLE 1,2,3 | clear-table TABLE（需密钥）
+删除: delete-task/delete-rows/clear-table/clear-bindings（均需 --key）
 
 敏感指令（需 --key，密钥由操作员在对话中提供）:
   start TASK-xxx --key <密钥>     # 启动任务/下发航线

@@ -50,7 +50,7 @@ python3 $G start TASK-202 --key <对话中的密钥>
 |------|------|------|
 | `unbind <id>` | 删除单条绑定 | 否 |
 | `delete-rows TABLE 1,2,3` | 按 id 删行 | 否 |
-| `delete-task TASK-xxx` | 删任务货架关联；任务本体无 id 时提示 | 否 |
+| `delete-task TASK-xxx` | 删除任务与货架计划 | 是 | 否 |
 | `clear-bindings` | 清空全部绑定 | 是 |
 | `clear-table TABLE` | 清空整表（危险） | 是 |
 
