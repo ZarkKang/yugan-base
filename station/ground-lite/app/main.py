@@ -2309,6 +2309,25 @@ def start_task(task_code: str) -> Dict[str, Any]:
     return {"success": True, "message": "start command queued", "data": get_task_payload(task_code)}
 
 
+@app.delete("/api/tasks/{task_code}")
+def delete_task(task_code: str) -> Dict[str, Any]:
+    """Delete a task and its shelf plan. Not a flight command."""
+    with db_conn() as conn:
+        row = conn.execute(
+            "select task_code, status from inspection_tasks where task_code=?",
+            (task_code,),
+        ).fetchone()
+        if not row:
+            return JSONResponse({"detail": "task not found"}, status_code=404)
+        if row["status"] == "running":
+            return JSONResponse({"detail": "task is running; stop it first"}, status_code=409)
+        conn.execute("begin immediate")
+        conn.execute("delete from inspection_task_shelves where task_code=?", (task_code,))
+        cur = conn.execute("delete from inspection_tasks where task_code=?", (task_code,))
+        conn.commit()
+    return {"success": True, "message": "task deleted", "task_code": task_code, "deleted": cur.rowcount}
+
+
 @app.post("/api/tasks/{task_code}/stop")
 def stop_task(task_code: str) -> Dict[str, Any]:
     now = time.time()

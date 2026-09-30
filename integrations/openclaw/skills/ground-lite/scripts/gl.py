@@ -335,29 +335,13 @@ def cmd_clear_table(args):
 
 
 def cmd_delete_task(args):
-    """delete-task TASK-xxx  (best-effort: clear related rows via ids if possible)"""
+    """delete-task TASK-xxx  — deletes task + shelf plan (not a flight command)."""
     if not args:
         print("usage: gl.py delete-task TASK-xxx")
         return
     code = args[0]
-    # inspection_tasks PK is task_code (no id) -> cannot delete single row via API ids.
-    # delete inspection_task_shelves rows for this task (has id), and report how to clear tasks.
-    rows = as_list(get("/api/db/tables/inspection_task_shelves?limit=500"))
-    ids = []
-    for r in rows:
-        if r.get("task_code") == code and r.get("id") is not None:
-            ids.append(int(r["id"]))
-    out = {"task_code": code, "task_shelves_deleted": 0, "note": ""}
-    if ids:
-        res = send("DELETE", "/api/db/tables/inspection_task_shelves", {"ids": ids})
-        out["task_shelves_deleted"] = res.get("deleted", len(ids)) if isinstance(res, dict) else 0
-        out["task_shelves_result"] = res
-    out["note"] = (
-        "inspection_tasks 无 id 列，单条任务无法按 id 删除。"
-        "若要删除任务记录本体，用 clear-table inspection_tasks（需密钥，清空全部任务）"
-        "或在管理页数据库查看中操作。"
-    )
-    print(json.dumps(out, ensure_ascii=False, indent=2)[:2000])
+    res = send("DELETE", f"/api/tasks/{code}")
+    print(json.dumps(res, ensure_ascii=False, indent=2)[:2000])
 
 
 def cmd_db(args):
@@ -405,7 +389,7 @@ def usage():
 任务: publish-task TASK-xxx [name] [drone_id] shelf1,shelf2
 盘点: bind|unbind|clear-bindings|qr-control
 库表: db tables|rows|export
-删除: delete-rows TABLE 1,2,3 | delete-task TASK-xxx | clear-table TABLE（需密钥）
+删除: delete-task TASK-xxx | delete-rows TABLE 1,2,3 | clear-table TABLE（需密钥）
 
 敏感指令（需 --key，密钥由操作员在对话中提供）:
   start TASK-xxx --key <密钥>     # 启动任务/下发航线
