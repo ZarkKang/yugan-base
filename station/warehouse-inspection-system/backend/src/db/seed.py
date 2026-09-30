@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ADMIN = {
     "username": "admin",
     "email": "admin@yugan.local",
-    "password": "admin123",
+    "password": "CHANGE_ME_DB_PASSWORD",
     "full_name": "系统管理员",
     "role": "admin",
 }

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ground Lite 地面站</title>
+  <link rel="stylesheet" href="/static/style.css?v=video-status-20260720-1845" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">域</div><div><strong>Ground Lite</strong><span>轻量版地面站</span></div></div>
+    <button class="nav-item active" data-page="monitor">无人机监控</button>
+    <button class="nav-item" data-page="publish">任务发布</button>
+    <button class="nav-item" data-page="inventory">盘点判定</button>
+    <button class="nav-item" data-page="database">数据库查看</button>
+    <button class="nav-item" data-page="assistant">AI 助理</button>
+    <div class="status" id="systemStatus">服务检查中...</div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><h1 id="pageTitle">无人机监控</h1><button id="refreshBtn">刷新</button></header>
+
+    <section id="monitorPage" class="page active">
+      <section class="grid top-grid">
+        <div class="card"><h2>无人机列表</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>编号</th><th>状态</th><th>电量</th></tr></thead><tbody id="droneRows"></tbody></table></div></div>
+        <div class="card"><div class="card-head"><h2>扫描到的二维码信息</h2><button id="qrToggleBtn" class="toggle-btn off">开始检测二维码</button></div><div id="qrList" class="qr-list empty">二维码检测已关闭</div></div>
+      </section>
+      <section class="card"><h2>无人机详情</h2><div class="metrics" id="droneDetail"></div></section>
+      <section class="grid video-grid">
+        <div class="card"><h2>原始视频流</h2><div class="video-box" id="rawBox"><span>请选择无人机</span></div><div class="video-status" id="rawVideoStatus">&#35270;&#39057;&#29366;&#24577;&#65306;&#26410;&#36830;&#25509;</div></div>
+        <div class="card"><h2>QR处理视频流</h2><div class="video-box" id="processedBox"><span>请选择无人机</span></div><div class="video-status" id="processedVideoStatus">&#35270;&#39057;&#29366;&#24577;&#65306;&#26410;&#36830;&#25509;</div></div>
+      </section>
+    </section>
+
+    <section id="publishPage" class="page">
+      <section class="grid publish-grid">
+        <div class="card">
+          <h2>任务配置</h2>
+          <div class="form-grid">
+            <label>任务编号<input id="taskCodeInput" placeholder="例如 TASK-001" /></label>
+            <label>任务名称<input id="taskNameInput" placeholder="二维码巡检任务" /></label>
+            <label>无人机 ID<input id="taskDroneInput" type="number" value="1" /></label>
+          </div>
+          <div class="selected-box"><strong>货架顺序</strong><div id="selectedShelves">未选择货架</div></div>
+          <div class="actions"><button id="publishTaskBtn" class="primary">发布任务</button><button id="startTaskBtn" class="danger">启动任务</button><button id="abortTaskBtn" class="danger">终止当前任务</button><button id="clearShelfBtn">清空选择</button></div>
+        </div>
+        <div class="card">
+          <h2>已发布任务</h2>
+          <div class="table-wrap task-list"><table><thead><tr><th>任务编号</th><th>状态</th><th>无人机</th><th>货架数</th><th>更新时间</th></tr></thead><tbody id="taskRows"></tbody></table></div>
+        </div>
+      </section>
+      <section class="card"><h2>货架数据</h2><div class="table-wrap shelves"><table><thead><tr><th>选择</th><th>编号</th><th>名称</th><th>位置</th><th>同步时间</th></tr></thead><tbody id="shelfRows"></tbody></table></div></section>
+    </section>
+
+    <section id="inventoryPage" class="page">
+      <section class="inventory-hero card">
+        <div>
+          <h2>RFID - 二维码 - 货架绑定与盘点判定</h2>
+          <p>先建立 RFID、SKU 与货架的基础绑定，再结合任务二维码识别结果进行位置正确、放错、漏扫、疑似缺失初步判定。</p>
+        </div>
+        <div class="notice">当前页面写入后端数据库：RFID、SKU 与货架绑定会保存到 inventory_bindings 表，可在数据库查看页导出或删除。</div>
+      </section>
+
+      <section class="grid inventory-grid">
+        <div class="card">
+          <h2>初始化入库绑定</h2>
+          <div class="form-grid bind-form binding-form">
+            <label>RFID<input id="bindRfidInput" placeholder="例如 EPC-001" /></label>
+            <label>SKU / 二维码<input id="bindSkuInput" placeholder="例如 SKU-001" /></label>
+            <label>货架<select id="bindShelfSelect"></select></label>
+          </div>
+          <div class="actions"><button id="addBindingBtn" class="primary">写入后端绑定</button><button id="clearBindingsBtn">清空后端绑定</button></div>
+          <div class="flow-line"><span>前端录入 RFID</span><b></b><span>绑定 SKU</span><b></b><span>绑定货架</span><b></b><span>形成 RFID ↔ SKU ↔ SHELF</span></div>
+          <div class="table-wrap bind-table"><table><thead><tr><th>RFID</th><th>SKU</th><th>绑定货架</th><th>操作</th></tr></thead><tbody id="bindingRows"></tbody></table></div>
+        </div>
+
+
+        <div class="card">
+          <h2>RFID 读写器</h2>
+          <div class="db-summary rfid-summary" id="rfidSummary"></div>
+          <div class="form-grid bind-form">
+            <label>串口<select id="rfidPortSelect"></select></label>
+            <label>功率 dBm<input id="rfidPowerInput" type="number" min="1" max="15" value="12" /></label>
+            <label>当前货架<select id="rfidShelfSelect"></select></label>
+          </div>
+          <div class="actions">
+            <button id="rfidConnectBtn" class="primary">连接 RFID</button>
+            <button id="rfidScanOnceBtn">单次读取</button>
+            <button id="rfidScanWindowBtn">限时扫描 3 秒</button>
+            <button id="rfidStopBtn" class="danger">停止扫描</button>
+          </div>
+          <div class="table-wrap bind-table"><table><thead><tr><th>RFID/EPC</th><th>RSSI</th><th>匹配结果</th><th>绑定 SKU</th><th>绑定货架</th><th>说明</th></tr></thead><tbody id="rfidRows"></tbody></table></div>
+        </div>
+
+        <div class="card inventory-rules">
+          <h2>判定说明</h2>
+          <div class="rule-list">
+            <div><strong>位置正确</strong><span>RFID/SKU 匹配，且识别货架与原绑定货架一致</span></div>
+            <div><strong>疑似缺失</strong><span>任务未匹配到绑定关系或未识别到目标，可能由遮挡、距离、天线方向或标签问题导致，需人工复核</span></div>
+            <div><strong>放错</strong><span>RFID 匹配，但当前 SKU 出现在其他货架中</span></div>
+            <div><strong>漏扫</strong><span>已绑定货物在本次任务结果中未出现，作为疑似缺失线索</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>无人机任务执行与结果判定</h2><div class="actions compact"><select id="inventoryTaskSelect"></select><button id="loadInventoryTaskBtn">加载任务结果</button><button id="judgeInventoryBtn" class="primary">执行判定</button></div></div>
+        <div class="judge-summary" id="judgeSummary"></div>
+        <div class="table-wrap judge-table"><table><thead><tr><th>SKU</th><th>RFID</th><th>绑定货架</th><th>任务货架</th><th>判定结果</th><th>说明</th></tr></thead><tbody id="judgeRows"></tbody></table></div>
+      </section>
+    </section>
+
+    <section id="databasePage" class="page">
+      <section class="card">
+        <div class="card-head"><h2>后端数据库查看</h2><div class="actions compact"><select id="dbTableSelect"></select><button id="loadDbTableBtn">查看数据</button><button id="exportDbTableBtn">导出 CSV</button><button id="clearDbTableBtn" class="danger">清空当前表</button></div></div>
+        <div class="db-summary" id="dbSummary"></div>
+        <div class="table-wrap db-table"><table id="dbTable"><thead id="dbTableHead"></thead><tbody id="dbTableBody"></tbody></table></div>
+      </section>
+    </section>
+
+    <section id="assistantPage" class="page ai-layout">
+      <div class="ai-shell">
+        <div class="ai-head">
+          <div>
+            <h2>OpenClaw · 域感助理</h2>
+            <div class="ai-badge"><i></i><span id="aiStatus">连接中…</span></div>
+          </div>
+          <div class="ai-head-right">
+            <div class="ai-model-wrap grouped">
+              <label for="aiModelSelect">模型</label>
+              <select id="aiModelSelect" title="选择 AI 模型"></select>
+            </div>
+            <div class="ai-head-actions">
+              <button type="button" id="aiClear">清空会话</button>
+            </div>
+          </div>
+        </div>
+        <div class="ai-msgs" id="aiMsgs"></div>
+        <div class="ai-chips" id="aiChips">
+          <button type="button" data-q="地面站状态如何？">系统状态</button>
+          <button type="button" data-q="最近完成了哪些巡检任务？">最近任务</button>
+          <button type="button" data-q="有哪些无人机？电量多少？">无人机</button>
+          <button type="button" data-q="根据当前数据总结巡检情况">巡检总结</button>
+        </div>
+        <form class="ai-input" id="aiForm">
+          <input id="aiText" placeholder="向 OpenClaw 助理提问…" autocomplete="off" />
+          <button type="submit" class="ai-send" id="aiSend">发送</button>
+        </form>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js?v=video-status-20260720-1845"></script>
+  <link rel="stylesheet" href="/static/assistant.css?v=ts-20261001" />
+  <script src="/static/assistant.js?v=ts-20261001"></script>
+</body>
+</html>

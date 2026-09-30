@@ -67,7 +67,7 @@ EPC 解析公式：`pc_byte0 = params[1]`, `epc_len = ((pc_byte0 // 8) + 1) * 2 
 - Python 环境未安装或不在 PATH 时，`pytest` 无法直接从命令行运行。
 - drone-db-prototype 所有路由强制 JWT 认证（`OAuth2PasswordBearer`），前端必须通过 `POST /api/auth/login` 获取 token 后存入 localStorage，否则所有请求返回 401。
 - warehouse-inspection-system 路由不强制认证，但前端同样配了自动登录机制以保持一致。
-- 默认管理员账号: `admin / admin123`（需确认 seed 数据已创建）。
+- 默认管理员账号: `admin / CHANGE_ME_DB_PASSWORD`（需确认 seed 数据已创建）。
 
 ## RFID 连接故障排查速查
 1. `GET /api/v1/rfid/diagnose` — 诊断端点，检查 pyserial、串口列表、连接状态

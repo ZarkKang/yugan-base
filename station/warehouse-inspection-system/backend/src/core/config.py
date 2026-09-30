@@ -1,4 +1,4 @@
-"""
+﻿"""
 配置文件 - 应用配置管理
 """
 from pydantic_settings import BaseSettings
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5433
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_PASSWORD: str = ""  # set via env POSTGRES_PASSWORD
     POSTGRES_DB: str = "warehouse_inspection"
 
     # Redis配置
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     RFID_AUTO_SCAN_ON_START: bool = False
 
     # 安全配置
-    SECRET_KEY: str = "your-secret-key-here"
+    SECRET_KEY: str = ""  # set via env SECRET_KEY
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
@@ -74,3 +74,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

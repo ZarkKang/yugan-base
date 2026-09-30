@@ -112,3 +112,20 @@ warehouse-inspection-system/backend/storage/
 Drone_Of_Inspection-patrol/
 *.deb
 *.backup
+
+# Secrets & local runtime
+.env
+.env.*
+!.env.prod.example
+*.key
+*.pem
+openclaw.json
+*token*
+*secret*
+ground-lite.db
+*.db
+__pycache__/
+*.bak
+*.bak.*
+_export/
+_repo/

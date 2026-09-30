@@ -1,4 +1,4 @@
-"""
+﻿"""
 安全模块 - JWT 认证 + 密码处理
 统一认证配置 - 与无人机数据系统共享 SECRET_KEY
 """
@@ -8,7 +8,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 # 统一 SECRET_KEY - 两套系统共享
-SECRET_KEY = "yugan-unified-secret-key-2026-shared-across-systems"
+SECRET_KEY = "CHANGE_ME_JWT_SECRET_KEY"
 ALGORITHM = "HS256"
 
 # Token 过期时间配置
@@ -57,3 +57,4 @@ def decode_access_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
