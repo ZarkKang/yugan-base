@@ -1,4 +1,4 @@
-﻿---
+---
 name: ground-lite
 description: 无人机仓库巡检地面站技能。任务发布、盘点、绑定、库表、查询可直接执行；start/起飞/解锁等敏感指令须操作员在对话提供密钥并通过 --key 校验。
 ---
@@ -13,11 +13,11 @@ description: 无人机仓库巡检地面站技能。任务发布、盘点、绑�
 ## 敏感指令用法
 
 操作员消息中应包含密钥，例如：
-`密钥 jetson，启动 TASK-202`
+`密钥 <操作员密钥>，启动 TASK-202`
 
 执行：
 ```bash
-python3 $G start TASK-202 --key jetson
+python3 $G start TASK-202 --key <操作员密钥>
 ```
 
 密钥错误或未提供 → 拒绝执行并说明。校验通过才可 `start`（下发航线/启动任务）。
