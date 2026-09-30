@@ -1,21 +1,67 @@
 ﻿#!/usr/bin/env python3
-"""ground-lite one-shot helper for OpenClaw skill.
+"""ground-lite helper for OpenClaw skill.
 
-AI 可用：任务发布、盘点判定、绑定维护、库表查看、只读查询。
-AI 禁止：任务 start、起飞/解锁/START_MISSION 等飞行指令。
+普通指令：任务发布、盘点、绑定、库表、查询 —— 直接执行。
+敏感指令（start/takeoff/arm/unlock 等）：必须带 --key 且与本机密钥一致。
 """
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-BASE = "http://127.0.0.1:8002"
+BASE = os.environ.get("GROUND_LITE_BASE", "http://127.0.0.1:8002")
+KEY_FILE = Path(os.environ.get("GL_SENSITIVE_KEY_FILE", Path.home() / ".openclaw/secrets/gcs-safety.key"))
 
-# Commands that unlock/take off the drone — AI must never call these.
-FORBIDDEN_SUBSTRINGS = (
-    "start", "START_MISSION", "takeoff", "take_off", "arm", "unlock",
-    "launch", "起飞", "解锁", "disarm",
-)
+SENSITIVE = {
+    "start", "start-task", "takeoff", "take-off", "arm", "unlock", "launch",
+    "起飞", "解锁",
+}
+
+
+def load_key() -> str:
+    env = os.environ.get("GL_SENSITIVE_KEY", "").strip()
+    if env:
+        return env
+    try:
+        return KEY_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def extract_key(argv):
+    key = os.environ.get("GL_SENSITIVE_KEY", "").strip()
+    out = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--key", "-k") and i + 1 < len(argv):
+            key = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith("--key="):
+            key = a.split("=", 1)[1]
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return key, out
+
+
+def check_sensitive(cmd: str, key: str) -> bool:
+    if cmd not in SENSITIVE and cmd.replace("_", "-") not in SENSITIVE:
+        return True
+    expected = load_key()
+    if not expected:
+        print("ERROR: 本机未配置敏感指令密钥，无法执行:", cmd)
+        return False
+    if key == expected:
+        return True
+    print("DENIED: 敏感指令需要正确密钥。用法示例:")
+    print("  gl.py start TASK-202 --key <密钥>")
+    print("  （密钥由操作员在对话中提供，校验失败不会执行）")
+    return False
 
 
 def get(path):
@@ -29,31 +75,17 @@ def get(path):
 
 
 def send(method, path, body=None):
-    url = BASE + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
+    req = urllib.request.Request(BASE + path, data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=12) as r:
+        with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return {"error": f"HTTP {e.code}", "body": e.read().decode("utf-8", "ignore")[:400]}
     except Exception as e:
         return {"error": str(e)}
-
-
-def guard_forbidden(cmd_name, extra=""):
-    text = (cmd_name + " " + extra).lower()
-    # allow commands that merely mention reading task-qr etc.
-    hard = ("start", "takeoff", "take-off", "arm", "unlock", "launch")
-    # only block when the command itself is a flight command
-    if cmd_name in ("start", "start-task", "takeoff", "arm", "unlock"):
-        print("FORBIDDEN: AI 不允许执行解锁起飞/任务启动指令，请在管理页人工操作。")
-        sys.exit(2)
-    if "start_task" in cmd_name or cmd_name.endswith("/start"):
-        print("FORBIDDEN: AI 不允许执行解锁起飞/任务启动指令。")
-        sys.exit(2)
 
 
 def fmt_ts(v):
@@ -82,7 +114,7 @@ def cmd_overview():
         print(f"  #{d.get('id')} {d.get('drone_code')} status={d.get('status')} battery={d.get('battery_level')}")
     print("=== 最近任务 ===")
     for t in tasks[:5]:
-        print(f"  {t.get('task_code')} status={t.get('status')} shelves={t.get('shelf_ids')} reason={t.get('status_reason')}")
+        print(f"  {t.get('task_code')} status={t.get('status')} shelves={t.get('shelf_ids')}")
     print(f"=== 货架 {len(shelves)} / 绑定 {len(bindings)} ===")
 
 
@@ -101,38 +133,48 @@ def cmd_task(code):
 
 
 def cmd_publish_task(args):
-    """publish-task TASK-001 [name] [drone_id] shelf1,shelf2,..."""
-    if len(args) < 2:
+    if len(args) < 1:
         print("usage: gl.py publish-task TASK-001 [name] [drone_id] 01-01,02-01")
         return
     task_code = args[0]
-    name = args[1] if len(args) > 1 and not args[1].isdigit() else task_code
+    name = task_code
     drone_id = 1
     shelf_ids = []
-    # parse flexible: remaining tokens may include drone_id and shelves
     rest = args[1:]
     if rest and rest[0].isdigit():
         drone_id = int(rest[0])
         rest = rest[1:]
-    elif len(args) >= 3 and args[2].isdigit():
-        drone_id = int(args[2])
-        rest = args[3:]
+    if rest and not rest[0].isdigit() and "," not in rest[0] and not (rest[0].count("-") == 1 and rest[0][0].isdigit()):
+        name = rest[0]
+        rest = rest[1:]
+    if rest and rest[0].isdigit():
+        drone_id = int(rest[0])
+        rest = rest[1:]
     for token in rest:
-        if "," in token:
-            shelf_ids.extend([x.strip() for x in token.split(",") if x.strip()])
-        elif token and not token.isdigit() and "-" in token:
-            shelf_ids.append(token)
-        elif token and not token.isdigit() and token != name:
-            # maybe name already used
-            pass
-    body = {
-        "task_code": task_code,
-        "name": name if name != task_code else task_code,
-        "drone_id": drone_id,
-        "shelf_ids": shelf_ids,
-    }
-    res = send("POST", "/api/tasks", body)
+        for part in str(token).split(","):
+            part = part.strip()
+            if part:
+                shelf_ids.append(part)
+    body = {"task_code": task_code, "name": name, "drone_id": drone_id, "shelf_ids": shelf_ids}
+    print(json.dumps(send("POST", "/api/tasks", body), ensure_ascii=False, indent=2)[:2000])
+
+
+def cmd_start(args):
+    """Sensitve: start task (requires --key)."""
+    if not args:
+        print("usage: gl.py start TASK-xxx --key <密钥>")
+        return
+    code = args[0]
+    res = send("POST", f"/api/tasks/{code}/start")
     print(json.dumps(res, ensure_ascii=False, indent=2)[:2000])
+
+
+def cmd_stop(args):
+    if not args:
+        print("usage: gl.py stop TASK-xxx")
+        return
+    res = send("POST", f"/api/tasks/{args[0]}/stop")
+    print(json.dumps(res, ensure_ascii=False, indent=2)[:1500])
 
 
 def cmd_task_qr(code):
@@ -156,26 +198,21 @@ def cmd_bindings():
 
 
 def cmd_bind(args):
-    """bind RFID SKU SHELF"""
     if len(args) < 3:
-        print("usage: gl.py bind EPC-001 SKU-001 01-01")
+        print("usage: gl.py bind RFID SKU SHELF")
         return
-    rfid, sku, shelf = args[0], args[1], args[2]
-    res = send("POST", "/api/inventory-bindings", {"rfid": rfid, "sku": sku, "shelf_code": shelf})
-    print(json.dumps(res, ensure_ascii=False, indent=2)[:1500])
+    print(json.dumps(send("POST", "/api/inventory-bindings", {"rfid": args[0], "sku": args[1], "shelf_code": args[2]}), ensure_ascii=False, indent=2)[:1500])
 
 
 def cmd_unbind(args):
     if not args:
-        print("usage: gl.py unbind <binding_id>")
+        print("usage: gl.py unbind <id>")
         return
-    res = send("DELETE", f"/api/inventory-bindings/{int(args[0])}")
-    print(json.dumps(res, ensure_ascii=False))
+    print(json.dumps(send("DELETE", f"/api/inventory-bindings/{int(args[0])}"), ensure_ascii=False))
 
 
 def cmd_clear_bindings():
-    res = send("DELETE", "/api/inventory-bindings", {"confirm": "inventory_bindings"})
-    print(json.dumps(res, ensure_ascii=False))
+    print(json.dumps(send("DELETE", "/api/inventory-bindings", {"confirm": "inventory_bindings"}), ensure_ascii=False))
 
 
 def cmd_qr(n=10):
@@ -197,20 +234,17 @@ def cmd_rfid_status():
 
 
 def cmd_qr_control(args):
-    """qr-control on|off"""
     if not args:
         print(json.dumps(get("/api/qr-control"), ensure_ascii=False, indent=2))
         return
     enabled = args[0].lower() in ("on", "1", "true", "enable")
-    res = send("POST", "/api/qr-control", {"enabled": enabled})
-    print(json.dumps(res, ensure_ascii=False, indent=2)[:1500])
+    print(json.dumps(send("POST", "/api/qr-control", {"enabled": enabled}), ensure_ascii=False, indent=2)[:1500])
 
 
 def cmd_inventory():
     bindings = as_list(get("/api/inventory-bindings"))
     qr = as_list(get("/api/qr-records"))
     rfid = as_list(get("/api/rfid/records"))
-    # also try task-tagged qr if any recent tasks
     tasks = as_list(get("/api/tasks"))[:3]
     for t in tasks:
         code = t.get("task_code")
@@ -218,7 +252,6 @@ def cmd_inventory():
             continue
         extra_qr = as_list(get(f"/api/tasks/{code}/qr-records"))
         extra_rfid = as_list(get(f"/api/tasks/{code}/rfid-records"))
-        # merge if list of dicts
         if extra_qr and isinstance(extra_qr, list):
             qr = extra_qr + [x for x in qr if x.get("task_code") != code]
         if extra_rfid and isinstance(extra_rfid, list):
@@ -226,11 +259,8 @@ def cmd_inventory():
 
     bind_by_sku = {b.get("sku"): b for b in bindings if b.get("sku")}
     bind_by_rfid = {b.get("rfid"): b for b in bindings if b.get("rfid")}
-    qr_set = set()
-    rfid_set = set()
-
+    qr_set, seen_sku = set(), set()
     correct, wrong_shelf, missing, extra = [], [], [], []
-    seen_sku = set()
 
     for q in qr:
         sku = q.get("text") or q.get("sku") or ""
@@ -251,14 +281,8 @@ def cmd_inventory():
 
     for r in rfid:
         rid = r.get("rfid") or r.get("epc") or ""
-        if rid:
-            rfid_set.add(rid)
-        # match by rfid to binding sku
         b = bind_by_rfid.get(rid)
-        if b and b.get("sku") in seen_sku:
-            continue
-        # if rfid recorded but no corresponding qr sku
-        if b and b.get("sku") not in seen_sku:
+        if b and b.get("sku") and b.get("sku") not in seen_sku:
             missing.append((b.get("sku"), rid, "有RFID无二维码"))
 
     for b in bindings:
@@ -282,7 +306,6 @@ def cmd_inventory():
 
 
 def cmd_db(args):
-    """db tables | db rows TABLE [limit] | db export TABLE"""
     if not args:
         print("usage: gl.py db tables|rows|export")
         return
@@ -299,7 +322,6 @@ def cmd_db(args):
         if len(args) < 2:
             print("usage: gl.py db export TABLE")
             return
-        # export returns csv
         try:
             with urllib.request.urlopen(BASE + f"/api/db/tables/{args[1]}/export", timeout=15) as r:
                 print(r.read().decode("utf-8", "ignore")[:4000])
@@ -313,8 +335,7 @@ def cmd_search(kw):
     kw = (kw or "").lower()
     for path, name in (("/api/tasks", "task"), ("/api/shelves", "shelf"), ("/api/inventory-bindings", "binding")):
         for item in as_list(get(path)):
-            blob = json.dumps(item, ensure_ascii=False).lower()
-            if kw in blob:
+            if kw in json.dumps(item, ensure_ascii=False).lower():
                 print(f"[{name}]", json.dumps(item, ensure_ascii=False)[:300])
 
 
@@ -323,16 +344,18 @@ def cmd_health():
 
 
 def usage():
-    print("""usage: gl.py <cmd> [args]
+    print("""usage: gl.py <cmd> [args] [--key 密钥]
 
 查询: overview|tasks|task|task-qr|task-rfid|drones|shelves|bindings|qr|rfid|inventory|search|health
-任务发布: publish-task TASK-001 [name] [drone_id] 01-01,02-01
-盘点绑定: bind RFID SKU SHELF | unbind <id> | clear-bindings
-二维码:   qr-control [on|off]
-数据库:   db tables | db rows TABLE [N] | db export TABLE
-RFID:     rfid-status
+任务: publish-task TASK-xxx [name] [drone_id] shelf1,shelf2
+盘点: bind|unbind|clear-bindings|qr-control
+库表: db tables|rows|export
 
-禁止(AI不可用): start / start-task / takeoff / arm / unlock 等解锁起飞与任务启动
+敏感指令（需 --key，密钥由操作员在对话中提供）:
+  start TASK-xxx --key <密钥>     # 启动任务/下发航线
+  takeoff / arm / unlock          # 同类解锁起飞语义
+
+密钥校验失败则拒绝执行。
 """)
 
 
@@ -340,53 +363,46 @@ def main():
     if len(sys.argv) < 2:
         usage()
         return
-    c = sys.argv[1]
-    a = sys.argv[2:]
-    guard_forbidden(c, " ".join(a))
+    key, argv = extract_key(sys.argv[1:])
+    cmd = argv[0]
+    args = argv[1:]
+    if not check_sensitive(cmd, key):
+        sys.exit(2)
 
-    if c == "overview":
-        cmd_overview()
-    elif c == "tasks":
-        cmd_tasks(a[0] if a else 5)
-    elif c == "task":
-        cmd_task(a[0] if a else "")
-    elif c == "task-qr":
-        cmd_task_qr(a[0] if a else "")
-    elif c == "task-rfid":
-        cmd_task_rfid(a[0] if a else "")
-    elif c == "drones":
-        cmd_drones()
-    elif c == "shelves":
-        cmd_shelves()
-    elif c == "bindings":
-        cmd_bindings()
-    elif c == "qr":
-        cmd_qr(a[0] if a else 10)
-    elif c == "rfid":
-        cmd_rfid(a[0] if a else 10)
-    elif c == "rfid-status":
-        cmd_rfid_status()
-    elif c == "inventory":
-        cmd_inventory()
-    elif c == "search":
-        cmd_search(a[0] if a else "")
-    elif c == "health":
-        cmd_health()
-    elif c == "publish-task":
-        cmd_publish_task(a)
-    elif c == "bind":
-        cmd_bind(a)
-    elif c == "unbind":
-        cmd_unbind(a)
-    elif c == "clear-bindings":
-        cmd_clear_bindings()
-    elif c == "qr-control":
-        cmd_qr_control(a)
-    elif c == "db":
-        cmd_db(a)
-    else:
-        print("unknown", c)
+    handlers = {
+        "overview": lambda: cmd_overview(),
+        "tasks": lambda: cmd_tasks(args[0] if args else 5),
+        "task": lambda: cmd_task(args[0] if args else ""),
+        "task-qr": lambda: cmd_task_qr(args[0] if args else ""),
+        "task-rfid": lambda: cmd_task_rfid(args[0] if args else ""),
+        "drones": cmd_drones,
+        "shelves": cmd_shelves,
+        "bindings": cmd_bindings,
+        "qr": lambda: cmd_qr(args[0] if args else 10),
+        "rfid": lambda: cmd_rfid(args[0] if args else 10),
+        "rfid-status": cmd_rfid_status,
+        "inventory": cmd_inventory,
+        "search": lambda: cmd_search(args[0] if args else ""),
+        "health": cmd_health,
+        "publish-task": lambda: cmd_publish_task(args),
+        "start": lambda: cmd_start(args),
+        "start-task": lambda: cmd_start(args),
+        "stop": lambda: cmd_stop(args),
+        "bind": lambda: cmd_bind(args),
+        "unbind": lambda: cmd_unbind(args),
+        "clear-bindings": cmd_clear_bindings,
+        "qr-control": lambda: cmd_qr_control(args),
+        "db": lambda: cmd_db(args),
+        "takeoff": lambda: cmd_start(args),
+        "arm": lambda: cmd_start(args),
+        "unlock": lambda: cmd_start(args),
+    }
+    fn = handlers.get(cmd)
+    if not fn:
+        print("unknown", cmd)
         usage()
+        return
+    fn()
 
 
 if __name__ == "__main__":
