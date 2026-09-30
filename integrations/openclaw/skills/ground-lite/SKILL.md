@@ -44,6 +44,18 @@ python3 $G start TASK-202 --key <对话中的密钥>
 {"task_code":"TASK-202","name":"货架复核","drone_id":1,"shelf_ids":["01-01","02-01"]}
 ```
 
+## 删除指令
+
+| 命令 | 说明 | 密钥 |
+|------|------|------|
+| `unbind <id>` | 删除单条绑定 | 否 |
+| `delete-rows TABLE 1,2,3` | 按 id 删行 | 否 |
+| `delete-task TASK-xxx` | 删任务货架关联；任务本体无 id 时提示 | 否 |
+| `clear-bindings` | 清空全部绑定 | 是 |
+| `clear-table TABLE` | 清空整表（危险） | 是 |
+
+可删表：shelves / inspection_tasks / inspection_task_shelves / inventory_bindings / rfid_scan_sessions / rfid_scan_records / drone_commands / qr_records
+
 ## 汇报
 
 1. 结论 2. 关键数据 3. 盘点差异 4. 敏感操作注明「已用操作员密钥执行 / 密钥校验失败」

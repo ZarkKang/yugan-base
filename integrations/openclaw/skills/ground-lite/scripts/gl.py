@@ -16,6 +16,7 @@ KEY_FILE = Path(os.environ.get("GL_SENSITIVE_KEY_FILE", Path.home() / ".openclaw
 
 SENSITIVE = {
     "start", "start-task", "takeoff", "take-off", "arm", "unlock", "launch",
+    "clear-table", "clear-bindings", "drop",
     "起飞", "解锁",
 }
 
@@ -305,6 +306,60 @@ def cmd_inventory():
         print("  EXTRA", x)
 
 
+
+def cmd_delete_rows(args):
+    """delete-rows TABLE id1,id2,...  (single row delete)"""
+    if len(args) < 2:
+        print("usage: gl.py delete-rows TABLE 1,2,3")
+        return
+    table = args[0]
+    ids = []
+    for tok in args[1:]:
+        for part in str(tok).split(","):
+            part = part.strip()
+            if part.isdigit():
+                ids.append(int(part))
+    if not ids:
+        print("no valid ids")
+        return
+    print(json.dumps(send("DELETE", f"/api/db/tables/{table}", {"ids": ids}), ensure_ascii=False, indent=2)[:1500])
+
+
+def cmd_clear_table(args):
+    """clear-table TABLE --key <密钥>   wipe whole table (destructive)"""
+    if not args:
+        print("usage: gl.py clear-table TABLE --key <密钥>")
+        return
+    table = args[0]
+    print(json.dumps(send("DELETE", f"/api/db/tables/{table}", {"confirm": table}), ensure_ascii=False, indent=2)[:1500])
+
+
+def cmd_delete_task(args):
+    """delete-task TASK-xxx  (best-effort: clear related rows via ids if possible)"""
+    if not args:
+        print("usage: gl.py delete-task TASK-xxx")
+        return
+    code = args[0]
+    # inspection_tasks PK is task_code (no id) -> cannot delete single row via API ids.
+    # delete inspection_task_shelves rows for this task (has id), and report how to clear tasks.
+    rows = as_list(get("/api/db/tables/inspection_task_shelves?limit=500"))
+    ids = []
+    for r in rows:
+        if r.get("task_code") == code and r.get("id") is not None:
+            ids.append(int(r["id"]))
+    out = {"task_code": code, "task_shelves_deleted": 0, "note": ""}
+    if ids:
+        res = send("DELETE", "/api/db/tables/inspection_task_shelves", {"ids": ids})
+        out["task_shelves_deleted"] = res.get("deleted", len(ids)) if isinstance(res, dict) else 0
+        out["task_shelves_result"] = res
+    out["note"] = (
+        "inspection_tasks 无 id 列，单条任务无法按 id 删除。"
+        "若要删除任务记录本体，用 clear-table inspection_tasks（需密钥，清空全部任务）"
+        "或在管理页数据库查看中操作。"
+    )
+    print(json.dumps(out, ensure_ascii=False, indent=2)[:2000])
+
+
 def cmd_db(args):
     if not args:
         print("usage: gl.py db tables|rows|export")
@@ -350,6 +405,7 @@ def usage():
 任务: publish-task TASK-xxx [name] [drone_id] shelf1,shelf2
 盘点: bind|unbind|clear-bindings|qr-control
 库表: db tables|rows|export
+删除: delete-rows TABLE 1,2,3 | delete-task TASK-xxx | clear-table TABLE（需密钥）
 
 敏感指令（需 --key，密钥由操作员在对话中提供）:
   start TASK-xxx --key <密钥>     # 启动任务/下发航线
@@ -391,6 +447,11 @@ def main():
         "bind": lambda: cmd_bind(args),
         "unbind": lambda: cmd_unbind(args),
         "clear-bindings": cmd_clear_bindings,
+        "delete-rows": lambda: cmd_delete_rows(args),
+        "delete-row": lambda: cmd_delete_rows(args),
+        "clear-table": lambda: cmd_clear_table(args),
+        "delete-task": lambda: cmd_delete_task(args),
+        "drop": lambda: cmd_clear_table(args),
         "qr-control": lambda: cmd_qr_control(args),
         "db": lambda: cmd_db(args),
         "takeoff": lambda: cmd_start(args),
